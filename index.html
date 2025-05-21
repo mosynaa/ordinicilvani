@@ -1,199 +1,173 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Catalogo Ordini</title>
-<style>
-  body { font-family: Arial, sans-serif; margin: 10px; background: #f7f7f7; }
-  header { margin-bottom: 20px; }
-  input, select, textarea { font-size: 1em; padding: 5px; margin: 5px 0; width: 100%; box-sizing: border-box; }
-  label { font-weight: bold; margin-top: 10px; display: block; }
-  table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-  th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-  th { background: #eee; }
-  .filter-container { max-width: 300px; margin-bottom: 15px; }
-  button { margin-top: 10px; padding: 10px 15px; font-size: 1em; cursor: pointer; }
-  #order-items input.qty { width: 80px; }
-  @media (min-width: 600px) {
-    input, select, textarea { width: auto; min-width: 200px; }
-    .filter-container { max-width: none; }
-  }
-</style>
+  <meta charset="UTF-8">
+  <title>Catalogo Ordini</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Poppins', sans-serif;
+      margin: 0;
+      background: #f2f2f2;
+      color: #333;
+    }
+    header {
+      background-color: #007BFF;
+      color: white;
+      padding: 1rem;
+      text-align: center;
+    }
+    .container {
+      padding: 1rem;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      align-items: center;
+    }
+    select, input, textarea {
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-family: inherit;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1rem;
+    }
+    .card {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.1);
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .btn {
+      background-color: #FF7F00;
+      color: white;
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .btn:hover {
+      background-color: #e76d00;
+    }
+  </style>
 </head>
 <body>
 
 <header>
   <h1>Catalogo Ordini</h1>
-
-  <label for="cliente">Nome Cliente:</label>
-  <input type="text" id="cliente" placeholder="Inserisci nome cliente" />
-
-  <label for="note">Note ordine:</label>
-  <textarea id="note" rows="3" placeholder="Inserisci note..."></textarea>
-
-  <div class="filter-container">
-    <label for="categoriaFilter">Filtra per categoria:</label>
-    <select id="categoriaFilter">
-      <option value="">Tutte le categorie</option>
-    </select>
-  </div>
-
-  <label for="cerca">Cerca prodotto:</label>
-  <input type="text" id="cerca" placeholder="Scrivi per cercare..." />
 </header>
 
-<table id="catalogo">
-  <thead>
-    <tr>
-      <th>Codice</th>
-      <th>Descrizione</th>
-      <th>Categoria</th>
-      <th>Prezzo</th>
-      <th>Quantità</th>
-    </tr>
-  </thead>
-  <tbody></tbody>
-</table>
+<div class="container">
+  <div class="controls">
+    <input type="text" id="search" placeholder="Cerca prodotto...">
+    <select id="categoryFilter">
+      <option value="">Tutte le categorie</option>
+    </select>
+    <input type="text" id="cliente" placeholder="Nome cliente">
+    <textarea id="note" rows="2" placeholder="Note..."></textarea>
+    <button class="btn" onclick="generaPDF()">Genera PDF</button>
+  </div>
 
-<button id="generaPdf">Genera PDF Ordine</button>
+  <div id="catalogo" class="grid"></div>
+</div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script>
-  const catalogoCsvUrl = 'catalogo.csv'; // nome file CSV da caricare
-  let catalogo = [];
-  let categorie = new Set();
+let prodotti = [];
 
-  const tbody = document.querySelector('#catalogo tbody');
-  const filtroCategoria = document.getElementById('categoriaFilter');
-  const cercaInput = document.getElementById('cerca');
-  const clienteInput = document.getElementById('cliente');
-  const noteInput = document.getElementById('note');
-
-  // Funzione per caricare CSV
-  async function caricaCsv(url) {
-    const response = await fetch(url);
-    const text = await response.text();
-    return parseCsv(text);
-  }
-
-  // Parse CSV semplice in array di oggetti
-  function parseCsv(text) {
-    const righe = text.trim().split('\n');
-    const intestazioni = righe[0].split(',').map(h => h.trim().toLowerCase());
-    return righe.slice(1).map(riga => {
-      const valori = riga.split(',');
-      let obj = {};
-      intestazioni.forEach((key, i) => obj[key] = valori[i] ? valori[i].trim() : '');
-      return obj;
+fetch('catalogo - BOMBOLETTE (1)')
+  .then(response => response.text())
+  .then(csv => {
+    Papa.parse(csv, {
+      header: true,
+      skipEmptyLines: true,
+      complete: function(results) {
+        prodotti = results.data;
+        popolaCategorie();
+        mostraProdotti();
+      }
     });
-  }
+  });
 
-  // Popola filtro categorie
-  function popolaCategorie() {
-    categorie.forEach(cat => {
-      const option = document.createElement('option');
-      option.value = cat;
-      option.textContent = cat;
-      filtroCategoria.appendChild(option);
-    });
-  }
+function popolaCategorie() {
+  const select = document.getElementById("categoryFilter");
+  const categorie = [...new Set(prodotti.map(p => p.categorie).filter(Boolean))];
+  categorie.forEach(cat => {
+    const option = document.createElement("option");
+    option.value = cat;
+    option.textContent = cat;
+    select.appendChild(option);
+  });
 
-  // Mostra catalogo filtrato e cercato
-  function mostraCatalogo() {
-    const filtroCat = filtroCategoria.value.toLowerCase();
-    const ricerca = cercaInput.value.toLowerCase();
+  select.addEventListener("change", mostraProdotti);
+  document.getElementById("search").addEventListener("input", mostraProdotti);
+}
 
-    tbody.innerHTML = '';
-    catalogo.forEach(item => {
-      if (filtroCat && item.categoria.toLowerCase() !== filtroCat) return;
-      if (ricerca && !(
-        item.codice.toLowerCase().includes(ricerca) ||
-        item.descrizione.toLowerCase().includes(ricerca)
-      )) return;
+function mostraProdotti() {
+  const filtro = document.getElementById("categoryFilter").value.toLowerCase();
+  const ricerca = document.getElementById("search").value.toLowerCase();
+  const catalogo = document.getElementById("catalogo");
+  catalogo.innerHTML = "";
 
-      const tr = document.createElement('tr');
-
-      tr.innerHTML = `
-        <td>${item.codice}</td>
-        <td>${item.descrizione}</td>
-        <td>${item.categoria}</td>
-        <td>${item.prezzo ? item.prezzo : 'p.p.'}</td>
-        <td><input type="text" class="qty" placeholder="es: 3 pz" /></td>
+  prodotti
+    .filter(p => 
+      (!filtro || (p.categorie || "").toLowerCase() === filtro) &&
+      (p.descrizione || "").toLowerCase().includes(ricerca)
+    )
+    .forEach((p, index) => {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `
+        <strong>${p.codice}</strong><br>
+        ${p.descrizione}<br>
+        <input type="text" placeholder="Quantità (es. 2 pz)" data-index="${index}" class="qta">
+        <input type="text" placeholder="Prezzo pagato" data-index="${index}" class="prezzo">
       `;
-      tbody.appendChild(tr);
+      catalogo.appendChild(card);
     });
-  }
+}
 
-  // Genera PDF con ordine
-  async function generaPdf() {
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
+function generaPDF() {
+  const cliente = document.getElementById("cliente").value || "";
+  const note = document.getElementById("note").value || "";
+  const righe = [["Codice", "Descrizione", "Quantità", "Prezzo"]];
+  const qtFields = document.querySelectorAll(".qta");
+  const prezzoFields = document.querySelectorAll(".prezzo");
 
-    const cliente = clienteInput.value.trim();
-    const note = noteInput.value.trim();
-
-    doc.setFontSize(14);
-    doc.text('Ordine cliente: ' + (cliente || '---'), 10, 10);
-    if(note) {
-      doc.setFontSize(12);
-      doc.text('Note: ' + note, 10, 20);
+  qtFields.forEach((qt, i) => {
+    const idx = qt.dataset.index;
+    const p = prodotti[idx];
+    const quantita = qt.value.trim();
+    const prezzo = prezzoFields[i].value.trim() || "p.p.";
+    if (quantita) {
+      righe.push([p.codice, p.descrizione, quantita, prezzo]);
     }
+  });
 
-    doc.setFontSize(12);
-    let y = note ? 30 : 20;
+  const contenuto = `
+    <h3>Cliente: ${cliente}</h3>
+    <table border="1" cellpadding="5" cellspacing="0">
+      ${righe.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}
+    </table>
+    <p><strong>Note:</strong><br>${note}</p>
+  `;
 
-    doc.text('Codice', 10, y);
-    doc.text('Descrizione', 40, y);
-    doc.text('Quantità', 120, y);
-    doc.text('Prezzo', 160, y);
-    y += 7;
+  const w = window.open("", "_blank");
+  w.document.write(`<html><head><title>Ordine</title></head><body>${contenuto}</body></html>`);
+  w.document.close();
+  w.print();
+}
+</script>
 
-    const righe = [];
-
-    // Leggi righe con quantità compilata
-    document.querySelectorAll('#catalogo tbody tr').forEach(tr => {
-      const qtyInput = tr.querySelector('input.qty');
-      const qty = qtyInput.value.trim();
-      if (qty) {
-        const codice = tr.children[0].textContent;
-        const descrizione = tr.children[1].textContent;
-        const prezzo = tr.children[3].textContent;
-        righe.push({ codice, descrizione, qty, prezzo });
-      }
-    });
-
-    if(righe.length === 0){
-      alert('Inserisci almeno una quantità per generare l\'ordine.');
-      return;
-    }
-
-    righe.forEach(riga => {
-      if(y > 270){
-        doc.addPage();
-        y = 10;
-      }
-      doc.text(riga.codice, 10, y);
-      doc.text(riga.descrizione, 40, y);
-      doc.text(riga.qty, 120, y);
-      doc.text(riga.prezzo, 160, y);
-      y += 7;
-    });
-
-    doc.save('ordine.pdf');
-  }
-
-  // Inizializza
-  async function init() {
-    catalogo = await caricaCsv(catalogoCsvUrl);
-
-    // Raccogli categorie uniche
-    catalogo.forEach(item => {
-      if(item.categoria) categorie.add(item.categoria);
-    });
-
-    popolaCategorie();
-    mostraCatalogo();
-
-    filtroCategoria.addEventListener('change', mostraCatalogo);
-    cercaInput.addEventListener('
+</body>
+</html>
