@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Catalogo Ordini</title>
+<style>
+  body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    margin: 0; padding: 0; background: #f8f9fa;
+  }
+  header {
+    background: #007bff; color: white; padding: 1rem;
+    text-align: center; font-size: 1.5rem; font-weight: bold;
+  }
+  main {
+    max-width: 960px; margin: 1rem auto; padding: 0 1rem;
+  }
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem;
+  }
+  select, input[type="search"], input[type="text"] {
+    padding: 0.5rem; font-size: 1rem; border: 1px solid #ccc;
+    border-radius: 4px; flex-grow: 1; min-width: 150px;
+  }
+  textarea {
+    width: 100%; min-height: 80px; margin-top: 0.5rem; border: 1px solid #ccc; border-radius: 4px;
+    padding: 0.5rem; font-size: 1rem; resize: vertical;
+  }
+  table {
+    width: 100%; border-collapse: collapse; background: white;
+    box-shadow: 0 0 8px rgba(0,0,0,0.05);
+  }
+  th, td {
+    padding: 0.5rem 0.75rem; border-bottom: 1px solid #eee;
+    text-align: left;
+  }
+  th {
+    background: #e9ecef;
+  }
+  input.qty, input.price {
+    width: 60px; padding: 0.25rem; font-size: 1rem;
+    border: 1px solid #ccc; border-radius: 4px;
+    text-align: right;
+  }
+  button.pdf-btn {
+    margin-top: 1rem; background: #007bff; color: white;
+    border: none; padding: 0.75rem 1.5rem; font-size: 1.2rem;
+    border-radius: 4px; cursor: pointer;
+  }
+  button.pdf-btn:hover {
+    background: #0056b3;
+  }
+  @media (max-width: 600px) {
+    .controls {
+      flex-direction: column;
+    }
+    input.qty, input.price {
+      width: 100%;
+    }
+  }
+</style>
+</head>
+<body>
+
+<header>Catalogo Ordini</header>
+
+<main>
+  <div class="controls">
+    <select id="categoryFilter" aria-label="Filtro categoria">
+      <option value="">Tutte le categorie</option>
+    </select>
+    <input type="search" id="searchBox" placeholder="Cerca prodotto..." aria-label="Cerca prodotto" />
+    <input type="text" id="clientName" placeholder="Nome cliente" aria-label="Nome cliente" />
+  </div>
+  <textarea id="orderNotes" placeholder="Note ordine (facoltative)"></textarea>
+  <table id="catalogTable" aria-label="Catalogo prodotti">
+    <thead>
+      <tr>
+        <th>Codice</th>
+        <th>Nome prodotto</th>
+        <th>Quantità</th>
+        <th>Prezzo</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Righe generate da JS -->
+    </tbody>
+  </table>
+  <button class="pdf-btn" id="generatePdfBtn">Genera PDF ordine</button>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+(async () => {
+  const categoryFilter = document.getElementById('categoryFilter');
+  const searchBox = document.getElementById('searchBox');
+  const clientName = document.getElementById('clientName');
+  const orderNotes = document.getElementById('orderNotes');
+  const catalogTableBody = document.querySelector('#catalogTable tbody');
+  const generatePdfBtn = document.getElementById('generatePdfBtn');
+
+  // Carica CSV dal file nel repo GitHub Pages
+  const response = await fetch('catalogo.csv');
+  const csvText = await response.text();
+  const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+
+  let products = parsed.data;
+
+  // Ottieni categorie uniche
+  const categories = Array.from(new Set(products.map(p => p.Categoria).filter(c => c)));
+  categories.sort();
+  for (const cat of categories) {
+    const opt = document.createElement('option');
+    opt.value = cat;
+    opt.textContent = cat;
+    categoryFilter.appendChild(opt);
+  }
+
+  function renderTable(filterCategory = '', searchTerm = '') {
+    catalogTableBody.innerHTML = '';
+    const filtered = products.filter(p => {
+      const matchCategory = filterCategory ? p.Categoria === filterCategory : true;
+      const matchSearch = searchTerm ? (p['Nome prodotto'].toLowerCase().includes(searchTerm) || p.Codice.toLowerCase().includes(searchTerm)) : true;
+      return matchCategory && matchSearch;
+    });
+
+    for (const p of filtered) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${p.Codice}</td>
+        <td>${p['Nome prodotto']}</td>
+        <td><input class="qty" type="number" min="0" step="1" value="0" aria-label="Quantità prodotto ${p['Nome prodotto']}" /></td>
+        <td><input class="price" type="text" placeholder="p.p." aria-label="Prezzo prodotto ${p['Nome prodotto']}" /></td>
+      `;
+      catalogTableBody.appendChild(tr);
+    }
+  }
+
+  categoryFilter.addEventListener('change', () => renderTable(categoryFilter.value, searchBox.value.toLowerCase()));
+  searchBox.addEventListener('input', () => renderTable(categoryFilter.value, searchBox.value.toLowerCase()));
+
+  renderTable();
+
+  function getOrderData() {
+    const rows = [...catalogTableBody.querySelectorAll('tr')];
+    const orderItems = [];
+    for (const row of rows) {
+      const codice = row.cells[0].textContent;
+      const nome = row.cells[1].textContent;
+      const qty = row.querySelector('input.qty').value;
+      let price = row.querySelector('input.price').value.trim();
+
+      if (qty === '' || isNaN(qty) || Number(qty) <= 0) continue;
+      if (price === '' || isNaN(price)) price = 'p.p.';
+
+      orderItems.push({ codice, nome, qty, price });
+    }
+    return orderItems;
+  }
+
+  generatePdfBtn.addEventListener('click', () => {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    const client = clientName.value.trim() || 'Cliente non specificato';
+    const notes = orderNotes.value.trim();
+
+    doc.setFontSize(16);
+    doc.text('Ordine Cliente', 14, 20);
+    doc.setFontSize(12);
+    doc.text(`Nome cliente: ${client}`, 14, 30);
+
+    let y = 40;
+
+    doc.autoTable({
+      startY: y,
+      head: [['Codice', 'Nome prodotto', 'Quantità', 'Prezzo']],
+      body: getOrderData().map(i => [i.codice, i.nome, i.qty, i.price]),
+      styles: { fontSize: 10 },
+      theme: 'striped',
+    });
+
+    y = doc.lastAutoTable.finalY + 10;
+
+    if (notes) {
+      doc.text('Note ordine:', 14, y);
+      doc.text(notes, 14, y + 10);
+    }
+
+    doc.save(`Ordine_${client.replace(/\s+/g,'_')}.pdf`);
+  });
+
+})();
+</script>
+
+<!-- jsPDF AutoTable plugin -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+</body>
+</html>
